@@ -7,12 +7,16 @@ const googleWallet = require('./lib/google-wallet');
 const appleWallet = require('./lib/apple-wallet');
 
 const JWT_SECRET = process.env.APP_JWT_SECRET || 'cambia-esto-en-produccion';
+// Clave para el panel de super-admin (solo la sabe el dueño de ARGAYES, tú).
+// Cámbiala en Render → Environment, no la dejes con el valor por default.
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'cambia-esto-tambien';
 
 const app = express();
 app.use(cors());
-   // Límite más alto que el default (100kb) porque el logo del negocio llega
-   // como imagen codificada en base64 dentro del JSON (puede pesar varios MB).
-   app.use(express.json({ limit: '8mb' }));
+// Límite más alto que el default (100kb) porque el logo del negocio llega
+// como imagen codificada en base64 dentro del JSON (puede pesar varios MB).
+app.use(express.json({ limit: '8mb' }));
+
 function sinDatosSensibles(empresa) {
   const { passwordHash, ...resto } = empresa;
   return resto;
@@ -27,11 +31,28 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Falta el token de sesión' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
+    const empresa = db.obtenerEmpresa(payload.empresaId);
+    if (!empresa) return res.status(401).json({ error: 'Sesión inválida o vencida' });
+    // Si ARGAYES desactivó la suscripción de este negocio (no pagó, etc.),
+    // se le corta el acceso al panel aunque su token todavía sea válido.
+    if (empresa.activa === false) {
+      return res.status(403).json({ error: 'Tu suscripción no está activa. Contacta a ARGAYES para reactivarla.' });
+    }
     req.empresaId = payload.empresaId;
     next();
   } catch (e) {
     res.status(401).json({ error: 'Sesión inválida o vencida' });
   }
+}
+
+// Protege las rutas de super-admin (solo tú, dueño de ARGAYES) con una
+// clave fija por header — no hace falta login de usuario para esto.
+function requireAdmin(req, res, next) {
+  const clave = req.headers['x-admin-secret'];
+  if (!clave || clave !== ADMIN_SECRET) {
+    return res.status(401).json({ error: 'Clave de administrador incorrecta' });
+  }
+  next();
 }
 
 // ---------- Cuenta del negocio: alta y login (Paso 6-A) ----------
@@ -53,8 +74,22 @@ app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
   const empresa = db.validarLogin(email, password);
   if (!empresa) return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+  if (empresa.activa === false) {
+    return res.status(403).json({ error: 'Tu suscripción no está activa. Contacta a ARGAYES para reactivarla.' });
+  }
   const token = jwt.sign({ empresaId: empresa.id }, JWT_SECRET, { expiresIn: '30d' });
   res.json({ token, empresa: sinDatosSensibles(empresa) });
+});
+
+// ---------- Super-admin (ARGAYES): ver y activar/desactivar negocios ----------
+app.get('/api/admin/empresas', requireAdmin, (req, res) => {
+  res.json(db.listarEmpresas().map(sinDatosSensibles));
+});
+
+app.patch('/api/admin/empresas/:id/activa', requireAdmin, (req, res) => {
+  const empresa = db.setActivaEmpresa(req.params.id, !!req.body.activa);
+  if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+  res.json(sinDatosSensibles(empresa));
 });
 
 // ---------- Panel: solo ve y toca lo de SU PROPIA empresa ----------
