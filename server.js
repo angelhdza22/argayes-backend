@@ -10,8 +10,9 @@ const JWT_SECRET = process.env.APP_JWT_SECRET || 'cambia-esto-en-produccion';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-
+   // Límite más alto que el default (100kb) porque el logo del negocio llega
+   // como imagen codificada en base64 dentro del JSON (puede pesar varios MB).
+   app.use(express.json({ limit: '8mb' }));
 function sinDatosSensibles(empresa) {
   const { passwordHash, ...resto } = empresa;
   return resto;
