@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config(); const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -26,7 +26,7 @@ const app = express();
 app.use(cors());
 // Límite más alto que el default (100kb) porque el logo del negocio llega
 // como imagen codificada en base64 dentro del JSON (puede pesar varios MB).
-app.use(express.json({ limit: '8mb' }));
+app.use(express.json({ limit: '8mb' }));app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Freno a intentos de adivinar contraseña a fuerza bruta: máximo 20 intentos
 // de login por IP cada 15 minutos. No afecta el uso normal (una empresa no
