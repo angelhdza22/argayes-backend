@@ -1,4 +1,5 @@
-require('dotenv').config(); const path = require('path');
+require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -26,7 +27,12 @@ const app = express();
 app.use(cors());
 // Límite más alto que el default (100kb) porque el logo del negocio llega
 // como imagen codificada en base64 dentro del JSON (puede pesar varios MB).
-app.use(express.json({ limit: '8mb' }));app.use('/public', express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: '8mb' }));
+
+// Sirve el logo por defecto que usa Google Wallet (programLogo es obligatorio
+// para poder guardar la tarjeta de lealtad: necesita una URL pública HTTPS,
+// no sirve una imagen en base64). Queda en /public/logo-argayes.png.
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Freno a intentos de adivinar contraseña a fuerza bruta: máximo 20 intentos
 // de login por IP cada 15 minutos. No afecta el uso normal (una empresa no
@@ -267,8 +273,11 @@ app.post('/api/canje', requireAuth, requireEmpresaActiva, ah(async (req, res) =>
 app.post('/api/canje/confirmar', requireAuth, requireEmpresaActiva, ah(async (req, res) => {
       const { codigo } = req.body;
       if (!esUuidValido(codigo)) return res.status(400).json({ error: 'codigo inválido' });
-      const resultado = await db.confirmarCanje(codigo);
-      if (!resultado.ok) return res.status(409).json({ error: resultado.razon });
+      const resultado = await db.confirmarCanje(codigo, req.empresaId);
+      if (!resultado.ok) {
+              const status = resultado.razon === 'no_pertenece' ? 403 : 409;
+              return res.status(status).json({ error: resultado.razon });
+      }
       res.json(resultado);
 }));
 
